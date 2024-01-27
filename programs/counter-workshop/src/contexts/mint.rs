@@ -1,10 +1,9 @@
-use anchor_lang::prelude::*;
+use anchor_lang::{prelude::*, system_program::{transfer, Transfer}};
 use anchor_spl::{associated_token::AssociatedToken,token::{
-    mint_to, Mint, MintTo, Token, TokenAccount
+    close_account, mint_to, CloseAccount, Mint, MintTo, Token, TokenAccount
 }};
 use mpl_token_metadata::{instructions::{CreateMetadataAccountV3Cpi, CreateMetadataAccountV3CpiAccounts, CreateMetadataAccountV3InstructionArgs}, types::{Creator, DataV2}};
 use anchor_spl::metadata::ID as METADATA_PROGRAM_ID;
-pub use anchor_lang::solana_program::sysvar::rent::ID as RENT_ID;
 
 use crate::state::CounterPDA;
 
@@ -13,7 +12,7 @@ pub struct MintSPL<'info> {
     #[account(mut)]
     user: Signer<'info>,
     #[account(
-        init,
+        init_if_needed,
         payer = user,
         mint::decimals = 6,
         mint::authority = counter_pda,
@@ -36,9 +35,6 @@ pub struct MintSPL<'info> {
     #[account(address = METADATA_PROGRAM_ID)]
     token_metadata_program: UncheckedAccount<'info>,
     system_program: Program<'info, System>,
-    #[account(address = RENT_ID)]
-    /// CHECK: no need to check this as it is only the sysvar rent account needed by the metaplex instruction
-    pub rent: UncheckedAccount<'info>,
 }
 
 impl<'info> MintSPL<'info> {
@@ -65,6 +61,10 @@ impl<'info> MintSPL<'info> {
             }
             _ => (),
         }
+
+        let x = self.user_ata.owner;
+        msg!("User ATA owner: {:?}", x);
+        msg!("User public key: {:?}", self.user.key());
         
         Ok(())
     }
@@ -90,7 +90,6 @@ impl<'info> MintSPL<'info> {
         let authority = &self.counter_pda.to_account_info();
         let payer = &self.user.to_account_info();
         let system_program = &self.system_program.to_account_info();
-        let rent = &self.rent.to_account_info();
 
         let metadata_account = CreateMetadataAccountV3Cpi::new(
             &self.token_metadata_program,
@@ -101,7 +100,7 @@ impl<'info> MintSPL<'info> {
                 payer,
                 update_authority: (&authority, true),
                 system_program,
-                rent: Some(rent),
+                rent: None,
             }, 
             CreateMetadataAccountV3InstructionArgs {
                 data: DataV2 {
@@ -119,6 +118,37 @@ impl<'info> MintSPL<'info> {
         );
         metadata_account.invoke_signed(signer_seeds)?;
 
+        Ok(())
+    }
+
+    pub fn close_ata(&mut self) -> Result<()> {
+        let seeds = &[
+            &b"counter"[..],
+            &self.user.key().to_bytes()[..], 
+            &[self.counter_pda.bump]
+        ];
+        let signer_seeds = &[&seeds[..]];
+
+        let cpi_accounts = Transfer {
+            from: self.user_ata.to_account_info(),
+            to: self.user.to_account_info(),
+        };
+        let cpi_program = self.system_program.to_account_info();
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+        transfer(cpi_ctx, self.user_ata.get_lamports())?;
+
+        let cpi_accounts = CloseAccount {
+            account: self.user_ata.to_account_info(),
+            destination: self.user.to_account_info(),
+            authority: self.user.to_account_info(),
+        };
+
+        let cpi_program = self.associated_token_program.to_account_info();
+
+        let cpi_ctx = CpiContext::new_with_signer(cpi_program, cpi_accounts, signer_seeds);
+
+        close_account(cpi_ctx)?;
+        
         Ok(())
     }
 }

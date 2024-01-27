@@ -1,11 +1,13 @@
 import * as anchor from "@coral-xyz/anchor";
 import { Program } from "@coral-xyz/anchor";
 import { CounterWorkshop } from "../target/types/counter_workshop";
-import { Keypair, SystemProgram } from "@solana/web3.js";
+import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
 import { findProgramAddressSync } from "@project-serum/anchor/dist/cjs/utils/pubkey";
-import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { ASSOCIATED_PROGRAM_ID } from "@coral-xyz/anchor/dist/cjs/utils/token";
+import { TOKEN_PROGRAM_ID, getAssociatedTokenAddress, getAssociatedTokenAddressSync } from "@solana/spl-token";
+import * as spl from "@solana/spl-token";
+import { ASSOCIATED_PROGRAM_ID, associatedAddress } from "@coral-xyz/anchor/dist/cjs/utils/token";
 import { get } from "http";
+import { publicKey } from "@project-serum/anchor/dist/cjs/utils";
 
 const TOKEN_METADATA_PROGRAM_ID = new anchor.web3.PublicKey("metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s");
 const getMetadata = async (mint: anchor.web3.PublicKey): Promise<anchor.web3.PublicKey> => {
@@ -25,6 +27,10 @@ describe("counter-workshop", () => {
   // Configure the client to use the local cluster.
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
+
+  const mint = Keypair.generate();
+  let metadata: PublicKey;
+  const userAta = getAssociatedTokenAddressSync(mint.publicKey, provider.publicKey);
 
   const program = anchor.workspace.CounterWorkshop as Program<CounterWorkshop>;
 
@@ -90,10 +96,8 @@ describe("counter-workshop", () => {
     console.log("Counter value = ", (await program.account.counterPda.fetch(userPDA)).counter);
   });
 
-  xit("Mint Spl Tokens", async() => {
-    const mint = Keypair.generate();
-    const metadata = await getMetadata(mint.publicKey);
-    const userAta = getAssociatedTokenAddressSync(mint.publicKey, provider.publicKey);
+  it("Mint Spl Tokens", async() => {
+    metadata = await getMetadata(mint.publicKey);
 
     const tx = await program.methods.mintSpl().accounts({
       user: provider.publicKey,
@@ -105,14 +109,35 @@ describe("counter-workshop", () => {
       associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
       tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
-      rent: anchor.web3.SYSVAR_RENT_PUBKEY,
     })
     .signers([mint])
     .rpc({
       skipPreflight: true
     })
     console.log("\n\nYour transaction signature", tx);
+    let ata_data = await provider.connection.getAccountInfo(userAta);
+    console.log("Owner = ", ata_data.owner.toBase58());
+    console.log("Owner of ata ", spl.AccountLayout.decode(Buffer.from(ata_data.data)).owner.toBase58());
   });
+
+  it("Close ATA", async() => {
+    const tx2 = await program.methods.closeAta().accounts({
+      user: provider.publicKey,
+      mint: mint.publicKey,
+      userAta: userAta,
+      metadata: metadata,
+      counterPda: userPDA,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_PROGRAM_ID,
+      tokenMetadataProgram: TOKEN_METADATA_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .signers([mint])
+    .rpc({
+      skipPreflight: true
+    })
+    console.log("\n\nYour transaction signature", tx2);
+  })
 
   it("Decrement PDA Counter", async() => {
     const tx = await program.methods.decrementPda().accounts({
@@ -123,5 +148,15 @@ describe("counter-workshop", () => {
 
     console.log("\n\nYour transaction signature", tx);
     console.log("Counter value = ", (await program.account.counterPda.fetch(userPDA)).counter);
+  });
+
+  it("Close PDA Counter", async() => {
+    const tx = await program.methods.closeState().accounts({
+      user: provider.publicKey,
+      counterPda: userPDA,
+    })
+    .rpc();
+
+    console.log("\n\nYour transaction signature", tx);
   });
 });

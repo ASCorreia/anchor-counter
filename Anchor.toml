@@ -5,7 +5,7 @@ seeds = false
 skip-lint = false
 
 [programs.devnet]
-counter_workshop = "6ubN8kmjebNWoQFU2x8qn941gHyQ5Lp3UFV7WCHfDXKu"
+counter_workshop = "DfhyXbqLN1DCWLNBnHxLxnBgN5vQpRMnQBZW1Dvmthp1"
 
 [registry]
 url = "https://api.apr.dev"

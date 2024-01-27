@@ -1,6 +1,6 @@
 use anchor_lang::prelude::*;
 
-declare_id!("6ubN8kmjebNWoQFU2x8qn941gHyQ5Lp3UFV7WCHfDXKu");
+declare_id!("DfhyXbqLN1DCWLNBnHxLxnBgN5vQpRMnQBZW1Dvmthp1");
 
 pub mod state;
 pub mod contexts;
@@ -38,5 +38,13 @@ pub mod counter_workshop {
     pub fn mint_spl(ctx: Context<MintSPL>) -> Result<()> {
         ctx.accounts.mint_spl()?;
         ctx.accounts.associate_metadata()
+    }
+
+    pub fn close_ata(ctx: Context<CloseATA>) -> Result<()> {
+        ctx.accounts.close_ata()
+    }
+
+    pub fn close_state(ctx: Context<Close>) -> Result<()> {
+        ctx.accounts.close()
     }
 }
